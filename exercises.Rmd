@@ -223,7 +223,7 @@ beror eventuella skillnader på?
 ## Övningar {-}
 
 **4.1 (T)** Förklara skillnaden mellan en kontinuerlig kovariat och en
-faktorkariabel i Cox-regression. Hur kodas en faktorvariabel med $k$
+faktorvariabel i Cox-regression. Hur kodas en faktorvariabel med $k$
 nivåer i modellen?
 
 **4.2 (T)** Vad är en *interaktion* i en regressionsmodell? Ge ett
@@ -613,7 +613,7 @@ hur man kan introducera collider bias av misstag i en överlevnadsstudie.
 
 ---
 
-# Kompetande riskmodeller
+# Kompeterande riskmodeller
 
 *Referens: Kapitel 11 i kursboken.*
 
@@ -697,7 +697,7 @@ modellkomplexitet? I vilka situationer föredrar man BIC framför AIC?
 
 **A.4 (R)** Simulera $n = 200$ observationer från en
 Weibull-fördelning med $\lambda = 1$, $p = 2$ (ökande hazard).
-Censurера 30 % av observationerna slumpmässigt. Skatta $\lambda$ och $p$
+Censurera 30 % av observationerna slumpmässigt. Skatta $\lambda$ och $p$
 med MLE via `phreg()`. Stämmer skattningarna med de sanna parametrarna?
 Upprepa 500 gånger och undersök MLE:s fördelning.
 
