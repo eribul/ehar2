@@ -1,0 +1,85 @@
+name: Render exercises
+
+on:
+  push:
+    paths:
+      - 'exercises.qmd'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Install R packages
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::eha
+            any::survival
+            any::cmprsk
+            any::dplyr
+            any::ggplot2
+            any::knitr
+            any::rmarkdown
+
+      - name: Render HTML
+        run: quarto render exercises.qmd --to html
+
+      - name: Render PDF
+        run: quarto render exercises.qmd --to pdf
+        continue-on-error: true   # PDF needs LaTeX; skip if unavailable
+
+      - name: Upload rendered documents
+        uses: actions/upload-artifact@v4
+        with:
+          name: exercises-rendered
+          path: |
+            exercises.html
+            exercises.pdf
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Prepare GitHub Pages content
+        run: |
+          mkdir -p _site
+          cp exercises.html _site/index.html
+          if [ -f exercises.pdf ]; then cp exercises.pdf _site/exercises.pdf; fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: render
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
