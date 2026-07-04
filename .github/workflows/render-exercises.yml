@@ -6,6 +6,15 @@ on:
       - 'exercises.qmd'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   render:
     runs-on: ubuntu-latest
@@ -51,3 +60,26 @@ jobs:
             exercises.pdf
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Prepare GitHub Pages content
+        run: |
+          mkdir -p _site
+          cp exercises.html _site/index.html
+          if [ -f exercises.pdf ]; then cp exercises.pdf _site/exercises.pdf; fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: render
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
