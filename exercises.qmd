@@ -1,0 +1,753 @@
+---
+title: "Exercises – Event History Analysis with R"
+subtitle: "Companion to *Event History Analysis with R*, 2nd Edition (Broström)"
+author: ""
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: flatly
+    embed-resources: true
+  pdf:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    documentclass: article
+    geometry: margin=2.5cm
+execute:
+  echo: true
+  eval: false
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+#| eval: true
+library(eha)
+library(survival)
+```
+
+---
+
+> **Instructions.** Each chapter in this exercise booklet corresponds to a chapter
+> in the textbook. Exercises are labelled **(T)** (Theoretical) or **(R)**
+> (R programming). Solutions may be provided separately.
+>
+> All datasets used below are available in the **eha** package unless otherwise
+> noted. Load the package with `library(eha)`.
+
+---
+
+# Event History and Survival Data
+
+*Reference: Chapter 1 of the textbook.*
+
+**1.1 (T)** In your own words, explain the difference between *right censoring*
+and *left truncation*. Give a concrete example of each from demographic or
+epidemiological research.
+
+**1.2 (T)** A study follows 200 individuals from a given start date. During
+the study, 30 individuals withdraw without having experienced the event of
+interest. Is this informative or non-informative censoring? Discuss what
+the consequences would be if censoring is informative.
+
+**1.3 (T)** Define the concept of *risk set*. Why is the risk set central to
+event history analysis?
+
+**1.4 (T)** In the `oldmort` dataset in **eha**, each individual is represented
+by one row. Explain the columns `enter`, `exit`, and `event`. What time scale
+is used? What does it mean that an individual may have `enter > 60`?
+
+**1.5 (R)** Load the `oldmort` dataset and answer the following:
+
+a. How many individuals are in the study?
+b. What is the proportion of censored observations?
+c. Compute the mean and median observation time (`exit − enter`) for censored
+   and uncensored individuals separately.
+d. Create a histogram of observation times and comment on the shape of
+   the distribution.
+
+```{r}
+#| label: ex1-5
+data(oldmort)
+
+# Number of individuals
+nrow(oldmort)
+
+# Proportion censored
+mean(oldmort$event == 0)
+
+# Observation time
+oldmort$time <- oldmort$exit - oldmort$enter
+tapply(oldmort$time, oldmort$event, mean)
+tapply(oldmort$time, oldmort$event, median)
+
+# Histogram
+hist(oldmort$time, xlab = "Observation time (years)",
+     main = "Distribution of observation times")
+```
+
+**1.6 (R)** Tabulate the number of observations by sex (`sex`) in `oldmort`.
+Is the distribution balanced? Compute the censoring proportion separately
+for men and women.
+
+**1.7 (T)** A person is born in 1820, enters the study (Sundsvall 1860–1879) at
+age 50, and dies at age 72. Explain why this person is *left truncated* and
+how it is handled in the `oldmort` structure using columns `enter`, `exit`,
+and `event`.
+
+---
+
+# Single Sample Data
+
+*Reference: Chapter 2 of the textbook.*
+
+**2.1 (T)** Let $T$ be a continuous random variable with density function $f(t)$.
+Define:
+
+a. The survival function $S(t)$.
+b. The hazard function $h(t)$.
+c. The cumulative hazard function $H(t)$.
+
+Show that $S(t) = \exp(-H(t))$.
+
+**2.2 (T)** Assume $T \sim \text{Exp}(\lambda)$. Derive $h(t)$ and show that
+the exponential distribution has a constant hazard. What is this property
+called?
+
+**2.3 (T)** State the Kaplan–Meier estimator and explain why it is a natural
+way to estimate $S(t)$ with censored data. Also state Greenwood's formula for
+the variance.
+
+**2.4 (T)** Explain what the Nelson–Aalen estimator measures and how it differs
+from the Kaplan–Meier estimator. Under what circumstances do they give similar
+results?
+
+**2.5 (R)** Using the `oldmort` dataset, estimate the survival function with
+the Kaplan–Meier estimator, separately for men and women.
+
+a. Plot both curves in the same graph with 95% confidence bands.
+b. Where do the curves differ most?
+c. Read off the median survival (median age-at-death) from the curves and
+   compare with the actual quartile ages.
+
+```{r}
+#| label: ex2-5
+library(survival)
+data(oldmort)
+fit <- survfit(Surv(enter, exit, event) ~ sex, data = oldmort)
+plot(fit, col = c("blue", "red"), xlab = "Age", ylab = "Survival",
+     conf.int = TRUE)
+legend("topright", legend = c("Male", "Female"),
+       col = c("blue", "red"), lty = 1)
+print(fit)
+```
+
+**2.6 (R)** Estimate the Nelson–Aalen estimator for `oldmort` (all individuals).
+Compare the cumulative hazard $\hat{H}(t)$ with $-\log \hat{S}_{KM}(t)$.
+Are they the same?
+
+```{r}
+#| label: ex2-6
+fit_km <- survfit(Surv(enter, exit, event) ~ 1, data = oldmort,
+                  type = "kaplan-meier")
+fit_na <- survfit(Surv(enter, exit, event) ~ 1, data = oldmort,
+                  type = "nelson-aalen")
+plot(-log(fit_km$surv), fit_na$cumhaz, pch = ".",
+     xlab = "-log(KM)", ylab = "Nelson-Aalen")
+abline(0, 1, col = "red")
+```
+
+**2.7 (T)** The discrete hazard $h_j = P(T = t_j \mid T \geq t_j)$ is used in
+nonparametric estimation. Show how the Kaplan–Meier estimator is expressed in
+terms of $\hat{h}_j$.
+
+**2.8 (R)** Perform a log-rank test to compare survival between men and women
+in `oldmort`. State $H_0$ and $H_1$, and draw a conclusion at the 5%
+significance level.
+
+```{r}
+#| label: ex2-8
+survdiff(Surv(enter, exit, event) ~ sex, data = oldmort)
+```
+
+---
+
+# Proportional Hazards and Cox Regression
+
+*Reference: Chapter 3 of the textbook.*
+
+**3.1 (T)** Define the proportional hazards (PH) model. What does the
+proportionality assumption imply? Illustrate graphically how hazard curves for
+two groups look under the PH assumption.
+
+**3.2 (T)** Write out the Cox partial likelihood for $n$ individuals. Explain
+why it is called a *partial* likelihood and what is not estimated.
+
+**3.3 (T)** Explain what the log-rank test and Cox regression have in common.
+Under what circumstances do they yield identical conclusions?
+
+**3.4 (T)** Show that if the hazard ratio (HR) is constant over time, this is
+equivalent to $\log(-\log S_1(t))$ and $\log(-\log S_2(t))$ being parallel
+lines. How can this be used graphically to check the PH assumption?
+
+**3.5 (R)** Fit a Cox regression to `oldmort` with covariate `sex`.
+
+a. What is the estimated hazard ratio (HR) for sex?
+b. Construct a 95% confidence interval for HR.
+c. Interpret the result demographically or biologically.
+
+```{r}
+#| label: ex3-5
+fit <- coxreg(Surv(enter, exit, event) ~ sex, data = oldmort)
+summary(fit)
+```
+
+**3.6 (R)** Check the PH assumption graphically using $\log(-\log(S(t)))$ plots
+for sex in `oldmort`.
+
+```{r}
+#| label: ex3-6
+fit_km <- survfit(Surv(enter, exit, event) ~ sex, data = oldmort)
+plot(fit_km, fun = "cloglog", col = c("blue", "red"),
+     xlab = "log(time)", ylab = "log(-log(S))")
+legend("topleft", legend = c("Male", "Female"),
+       col = c("blue", "red"), lty = 1)
+```
+
+**3.7 (R)** Compare the results from a log-rank test and Cox regression on
+`oldmort` with covariate `sex`. Are the $p$-values similar? What explains any
+differences?
+
+**3.8 (T)** Describe how the baseline cumulative hazard function $H_0(t)$ is
+estimated (Breslow estimator) after the Cox model coefficients have been
+estimated.
+
+---
+
+# Explanatory Variables and Regression
+
+*Reference: Chapter 4 of the textbook.*
+
+**4.1 (T)** Explain the difference between a continuous covariate and a factor
+variable in Cox regression. How is a factor variable with $k$ levels coded in
+the model?
+
+**4.2 (T)** What is an *interaction* in a regression model? Give an example
+from survival analysis where an interaction between sex and age might be
+meaningful.
+
+**4.3 (T)** Describe the proportional hazards assumption for a continuous
+covariate $x$. What does it mean that the hazard ratio is $e^\beta$ per unit
+increase in $x$?
+
+**4.4 (R)** Fit a Cox model to `oldmort` with the covariate `civ` (civil
+status). Which reference category is used? How do you interpret the
+coefficients?
+
+```{r}
+#| label: ex4-4
+data(oldmort)
+fit <- coxreg(Surv(enter, exit, event) ~ civ, data = oldmort)
+summary(fit)
+```
+
+**4.5 (R)** Add an interaction term between `sex` and `civ` to the Cox model
+on `oldmort`. Is the interaction statistically significant (LR test,
+$\alpha = 0.05$)? Interpret the results.
+
+```{r}
+#| label: ex4-5
+fit0 <- coxreg(Surv(enter, exit, event) ~ sex + civ,  data = oldmort)
+fit1 <- coxreg(Surv(enter, exit, event) ~ sex * civ,  data = oldmort)
+anova(fit0, fit1)
+```
+
+**4.6 (R)** Investigate whether the variable `birthdate` has a linear
+relationship with the log-hazard using Martingale residuals (see Section 6.7
+of the textbook). Create a plot and comment.
+
+**4.7 (T)** Explain the Akaike Information Criterion (AIC) and how it is
+used for model selection in Cox regression. What does AIC penalise for?
+
+**4.8 (R)** Perform a stepwise backward elimination on `oldmort` with
+covariates `sex`, `civ`, `ses` (socioeconomic status), and `birthdate`.
+Report the final model and its AIC.
+
+```{r}
+#| label: ex4-8
+fit_full <- coxreg(Surv(enter, exit, event) ~ sex + civ + ses + birthdate,
+                   data = oldmort)
+drop1(fit_full, test = "Chisq")
+```
+
+---
+
+# Poisson Regression
+
+*Reference: Chapter 5 of the textbook.*
+
+**5.1 (T)** State the assumptions of the Poisson distribution and explain why
+it is appropriate for modelling counts of deaths in a population over a time
+period.
+
+**5.2 (T)** Derive the connection between the exponential distribution's hazard
+and the Poisson process: if events in a constant-hazard process are
+Poisson-distributed with rate $\lambda$, what distribution does the waiting
+time to the first event follow?
+
+**5.3 (T)** In Poisson regression for tabular data, an offset $\log(E_{ij})$
+is used, where $E_{ij}$ is exposure time. Why is this necessary, and how
+is it interpreted?
+
+**5.4 (R)** Use R's built-in Poisson function to estimate a Poisson regression
+model on aggregated data from `oldmort`. Aggregate the number of deaths and
+person-years by sex and five-year age group.
+
+```{r}
+#| label: ex5-4
+data(oldmort)
+oldmort$agegroup <- cut(oldmort$enter, breaks = seq(60, 100, by = 5),
+                        right = FALSE)
+# Aggregate
+agg <- aggregate(cbind(event, exit - enter) ~ sex + agegroup,
+                 data = oldmort, FUN = sum)
+names(agg)[3:4] <- c("deaths", "pyears")
+# Poisson model
+fit_pois <- glm(deaths ~ sex + agegroup + offset(log(pyears)),
+                family = poisson, data = agg)
+summary(fit_pois)
+```
+
+**5.5 (R)** Compare the coefficients from the Poisson regression in Exercise
+5.4 with results from a corresponding Cox regression on individual data.
+Are they similar?
+
+**5.6 (T)** Explain the link between the *piecewise constant hazard* (PCH)
+model and Poisson regression. How does one choose the number of intervals?
+
+**5.7 (R)** Fit a piecewise constant hazard model to `oldmort` with age
+breakpoints at 65, 70, 75, and 80 using `phreg()` in **eha**. Plot the
+estimated hazard function.
+
+```{r}
+#| label: ex5-7
+fit <- phreg(Surv(enter, exit, event) ~ sex,
+             dist = "pch", cuts = c(65, 70, 75, 80),
+             data = oldmort)
+plot(fit)
+```
+
+---
+
+# More on Cox Regression
+
+*Reference: Chapter 6 of the textbook.*
+
+**6.1 (T)** Define a *time-varying covariate*. Give one medical and one
+demographic example. How does the data structure (one row per person vs.
+multiple rows per person) differ from that for a time-fixed covariate?
+
+**6.2 (R)** The `oldmort` dataset does not contain a natural time-varying
+covariate, but suppose civil status could change during the study. Describe
+(without writing code) how you would restructure the data in
+*counting process* format (start–stop format) if such information were
+available.
+
+**6.3 (T)** Explain the differences between the Breslow, Efron, and exact
+method corrections for *ties* in the Cox partial likelihood. When are the
+differences largest?
+
+**6.4 (R)** Fit a Cox model to `oldmort` with `sex` and `ses` and compare
+AIC for the Breslow and Efron tie-handling methods.
+
+```{r}
+#| label: ex6-4
+fit_b <- coxreg(Surv(enter, exit, event) ~ sex + ses,
+                method = "breslow", data = oldmort)
+fit_e <- coxreg(Surv(enter, exit, event) ~ sex + ses,
+                method = "efron",   data = oldmort)
+AIC(fit_b)
+AIC(fit_e)
+```
+
+**6.5 (T)** Define *stratification* in Cox regression. When is it used?
+What cannot be estimated in a stratified Cox model?
+
+**6.6 (R)** Fit a stratified Cox model to `oldmort` stratified on `civ`
+with covariate `sex`. Compare with an unstratified model. Discuss any
+differences in the estimated hazard ratios.
+
+```{r}
+#| label: ex6-6
+fit_strat    <- coxreg(Surv(enter, exit, event) ~ sex + strata(civ),
+                       data = oldmort)
+fit_no_strat <- coxreg(Surv(enter, exit, event) ~ sex + civ,
+                       data = oldmort)
+summary(fit_strat)
+summary(fit_no_strat)
+```
+
+**6.7 (T)** Explain what Schoenfeld residuals are and how they can be used
+to formally test the PH assumption.
+
+**6.8 (R)** Test the PH assumption for `sex` and `ses` in a Cox model on
+`oldmort` using `cox.zph()`. Interpret the results.
+
+```{r}
+#| label: ex6-8
+fit <- coxph(Surv(enter, exit, event) ~ sex + ses, data = oldmort)
+zph <- cox.zph(fit)
+print(zph)
+plot(zph)
+```
+
+---
+
+# Register-Based Survival Data
+
+*Reference: Chapter 7 of the textbook.*
+
+**7.1 (T)** Describe the advantages and limitations of register-based data
+compared with prospective studies for survival analysis. Name at least two
+specific challenges.
+
+**7.2 (T)** In population registers, *person-years* are often used as the
+exposure measure. Explain how person-years are computed and why they are a
+suitable denominator for calculating mortality rates.
+
+**7.3 (R)** The datasets `swedeaths` and `swepop` in **eha** contain deaths
+and population data for Sweden. Compute age- and sex-specific mortality rates.
+Visualise them on a log scale.
+
+```{r}
+#| label: ex7-3
+data(swedeaths)
+data(swepop)
+library(dplyr)
+d <- left_join(swedeaths, swepop, by = c("age", "sex", "year"))
+d$rate <- d$deaths / d$pop
+library(ggplot2)
+ggplot(d, aes(x = age, y = rate, color = sex)) +
+  geom_line() +
+  scale_y_log10() +
+  facet_wrap(~ year) +
+  labs(title = "Mortality rates by age and sex",
+       y = "Mortality rate (log scale)")
+```
+
+**7.4 (T)** What is a *communal covariate*? Give an example and explain why
+standard Cox partial likelihood can be incorrect if such a covariate is
+treated as individual-specific.
+
+**7.5 (R)** Using **eha**, fit a piecewise exponential (PCH) model with
+`tpchreg()` on tabulated population data. Include sex as a covariate and
+report the hazard ratios.
+
+**7.6 (T)** Explain the difference between *direct* and *indirect* age
+standardisation. In what contexts is each method used?
+
+---
+
+# Parametric Models
+
+*Reference: Chapter 8 of the textbook.*
+
+**8.1 (T)** List at least four parametric distributions used in survival
+analysis (e.g. exponential, Weibull, log-normal, Gompertz). For each
+distribution, state whether the hazard function is monotonically increasing,
+decreasing, constant, or unimodal (hump-shaped).
+
+**8.2 (T)** The Weibull distribution has hazard function
+$h(t) = \frac{p}{\lambda}\!\left(\frac{t}{\lambda}\right)^{p-1}$.
+What happens to the hazard when $p = 1$? When $p > 1$? When $p < 1$?
+
+**8.3 (T)** Explain the *Accelerated Failure Time* (AFT) model. How does the
+interpretation of coefficients in an AFT model differ from that in a PH model?
+
+**8.4 (R)** Fit a Weibull model to `oldmort` with covariate `sex` using
+`phreg()` in **eha**. Compare the results (hazard ratio for sex) with Cox
+regression.
+
+```{r}
+#| label: ex8-4
+fit_w   <- phreg(Surv(enter, exit, event) ~ sex, dist = "weibull",
+                 data = oldmort)
+fit_cox <- coxreg(Surv(enter, exit, event) ~ sex, data = oldmort)
+summary(fit_w)
+summary(fit_cox)
+```
+
+**8.5 (R)** Compare the Weibull model and Cox model on `oldmort` using
+AIC. Which model is preferred?
+
+**8.6 (T)** Explain what the Weibull distribution's PH and AFT properties have
+in common. Show algebraically that the Weibull model is simultaneously a PH
+model and an AFT model.
+
+**8.7 (R)** Fit a log-logistic model (AFT) and a Weibull model (PH) to
+`oldmort` with `sex` and `ses` as covariates. Compare AIC. Which assumption
+about the shape of the hazard is more realistic for these data?
+
+```{r}
+#| label: ex8-7
+fit_ll <- aftreg(Surv(enter, exit, event) ~ sex + ses,
+                 dist = "loglogistic", data = oldmort)
+fit_wb <- phreg(Surv(enter, exit, event)  ~ sex + ses,
+                dist = "weibull",     data = oldmort)
+AIC(fit_ll)
+AIC(fit_wb)
+```
+
+**8.8 (R)** Plot the estimated hazard function from the Weibull model in
+Exercise 8.4 separately for men and women. Add a Nelson–Aalen estimate
+for comparison.
+
+---
+
+# Multivariate Survival Models
+
+*Reference: Chapter 9 of the textbook.*
+
+**9.1 (T)** What is meant by *clustered* survival data? Give one concrete
+example from medical research and one from demographic research.
+
+**9.2 (T)** Explain the concept of *frailty* (unobserved heterogeneity).
+How is it modelled in a frailty model? What is the most common frailty
+distribution?
+
+**9.3 (T)** Why does a standard Cox model (which ignores clustering) underestimate
+the variance of the regression coefficients? Describe the *robust sandwich*
+variance as an alternative approach.
+
+**9.4 (R)** The `infants` dataset in **eha** contains infant survival data
+with families as clusters. Fit a Cox model with `id` clustering (robust
+sandwich variance) and compare the standard errors with those from a naive
+Cox model.
+
+```{r}
+#| label: ex9-4
+data(infants)
+# Naive model
+fit_naive  <- coxph(Surv(enter, exit, event) ~ sex + age + ses,
+                    data = infants)
+# Robust (clustered) model
+fit_robust <- coxph(Surv(enter, exit, event) ~ sex + age + ses +
+                      cluster(id), data = infants)
+summary(fit_naive)$coefficients
+summary(fit_robust)$coefficients
+```
+
+**9.5 (R)** Fit a *shared frailty* model to `infants` with Gamma frailty
+and `id` as the grouping variable. Estimate the frailty variance and
+interpret the result.
+
+```{r}
+#| label: ex9-5
+fit_frailty <- phreg(Surv(enter, exit, event) ~ sex + age + frailty(id),
+                     data = infants, dist = "weibull")
+summary(fit_frailty)
+```
+
+**9.6 (T)** Explain the difference between the *marginal* and *conditional*
+parameterisations in frailty models. What type of hazard ratio does each
+method report?
+
+**9.7 (R)** Investigate how `ses` (socioeconomic status) affects infant
+mortality in `infants` using a stratified Cox model (stratified on `id`).
+Compare with the frailty model.
+
+---
+
+# Causality and Matching
+
+*Reference: Chapter 10 of the textbook.*
+
+**10.1 (T)** Explain the *potential outcomes framework* (Rubin's causal model).
+What is the *fundamental problem of causal inference* and why can it not be
+solved directly?
+
+**10.2 (T)** What is a *propensity score*? How can it be used in matching to
+estimate causal effects? What assumptions are required?
+
+**10.3 (T)** Describe Aalen's *additive hazards model*. How does the
+interpretation of coefficients differ from the Cox PH model?
+
+**10.4 (R)** Simulate a simple observational study with 500 individuals where
+treatment assignment depends on a covariate $X$ (confounding). Compare a naive
+survival comparison between treated and untreated with a propensity-score
+matched analysis.
+
+```{r}
+#| label: ex10-4
+set.seed(42)
+n    <- 500
+x    <- rnorm(n)
+# Treatment depends on x (confounding)
+trt  <- rbinom(n, 1, plogis(0.8 * x))
+# Survival time depends on x and treatment
+time <- rexp(n, rate = exp(0.5 * x - 0.3 * trt))
+evnt <- rep(1, n)
+df   <- data.frame(time, event = evnt, trt, x)
+
+# Naive comparison
+fit_naive <- coxph(Surv(time, event) ~ trt, data = df)
+summary(fit_naive)
+
+# Propensity score
+ps_model <- glm(trt ~ x, family = binomial, data = df)
+df$ps    <- predict(ps_model, type = "response")
+
+# Matching (requires the MatchIt package):
+# library(MatchIt)
+# m          <- matchit(trt ~ x, method = "nearest", data = df)
+# df_matched <- match.data(m)
+# fit_matched <- coxph(Surv(time, event) ~ trt, data = df_matched)
+# summary(fit_matched)
+```
+
+**10.5 (T)** What is *dynamic path analysis* and for what purpose is it used
+in event history analysis?
+
+**10.6 (T)** Explain the concept of *collider bias*. Give an example of how
+collider bias can be inadvertently introduced in a survival study.
+
+---
+
+# Competing Risks Models
+
+*Reference: Chapter 11 of the textbook.*
+
+**11.1 (T)** What are *competing risks*? Give three concrete examples from
+medical or demographic research. Why is it problematic to treat competing risks
+as ordinary censoring?
+
+**11.2 (T)** Explain the difference between the *cause-specific hazard* function
+and the *subdistribution hazard* function (Fine–Gray). Which is easier to
+interpret biologically? Which is most relevant for modelling the *cumulative
+incidence function* (CIF)?
+
+**11.3 (T)** Show that the sum of cause-specific hazards gives the total hazard:
+$$h(t) = \sum_{j=1}^{J} h_j(t).$$
+What does this imply for the interpretation of the Kaplan–Meier estimate
+applied to each individual cause?
+
+**11.4 (R)** Estimate cumulative incidence functions (CIF) for two competing
+causes using `cuminc()` from the **cmprsk** package. Use the simulated data
+below and plot the CIFs.
+
+```{r}
+#| label: ex11-4
+set.seed(123)
+n      <- 300
+time   <- rexp(n, 0.1)
+# Status: 0 = censored, 1 = cause 1, 2 = cause 2
+status <- sample(0:2, n, replace = TRUE, prob = c(0.3, 0.4, 0.3))
+grp    <- sample(c("A", "B"), n, replace = TRUE)
+library(cmprsk)
+fit_cif <- cuminc(ftime = time, fstatus = status, group = grp)
+plot(fit_cif, col = 1:4, xlab = "Time", ylab = "Cumulative incidence")
+```
+
+**11.5 (T)** Why is $1 - \hat{S}_{KM}(t)$ for a single cause (treating the
+other causes as censoring) a *biased* estimate of the cumulative incidence?
+Explain intuitively.
+
+**11.6 (R)** Fit a Fine–Gray model for the subdistribution hazard of cause 1
+from the simulation in Exercise 11.4, using `crr()` from **cmprsk**. Include
+the group variable as a covariate.
+
+```{r}
+#| label: ex11-6
+x      <- as.numeric(grp == "B")
+fit_fg <- crr(ftime = time, fstatus = status, cov1 = x, failcode = 1)
+summary(fit_fg)
+```
+
+**11.7 (T)** Compare the interpretation of coefficients in a cause-specific Cox
+regression with those in a Fine–Gray model. Under what circumstances can they
+point in opposite directions?
+
+**11.8 (R)** Investigate whether competing risks arise in `oldmort` by
+synthetically splitting `event` into two causes at random. Compare the sum of
+the two CIFs with $1 - \hat{S}_{KM}(t)$ for all-cause mortality. What do you
+observe?
+
+```{r}
+#| label: ex11-8
+data(oldmort)
+set.seed(99)
+oldmort$cause <- ifelse(oldmort$event == 0, 0,
+                        sample(1:2, sum(oldmort$event), replace = TRUE)[
+                          cumsum(oldmort$event)])
+library(cmprsk)
+fit_cif2 <- cuminc(ftime  = oldmort$exit - oldmort$enter,
+                   fstatus = oldmort$cause)
+fit_km2  <- survfit(Surv(exit - enter, event) ~ 1, data = oldmort)
+# Compare: sum of CIFs vs 1 - KM
+plot(fit_cif2, col = c("blue", "red"),
+     xlab = "Time (years)", ylab = "Cumulative incidence")
+lines(fit_km2, fun = "event", lty = 2, col = "black")
+legend("bottomright",
+       legend = c("CIF cause 1", "CIF cause 2", "1 - KM (all-cause)"),
+       col = c("blue", "red", "black"), lty = c(1, 1, 2))
+```
+
+---
+
+# Appendix: Mathematical Tools
+
+*Reference: Appendix A–B of the textbook.*
+
+**A.1 (T)** Explain what a *likelihood function* is and formulate the maximum
+likelihood estimator (MLE). Under what assumptions is the MLE asymptotically
+normally distributed?
+
+**A.2 (T)** Formulate the *Wald test*, *likelihood ratio test* (LRT), and
+*score test* for testing $H_0\colon \beta = 0$ in a regression model. Are they
+always equivalent? Discuss.
+
+**A.3 (T)** What are AIC and BIC? How do they differ in how they penalise model
+complexity? In what situations is BIC preferred over AIC?
+
+**A.4 (R)** Simulate $n = 200$ observations from a Weibull distribution with
+$\lambda = 1$, $p = 2$ (increasing hazard). Censor 30% of observations at
+random. Estimate $\lambda$ and $p$ by MLE via `phreg()`. Do the estimates
+agree with the true parameter values? Repeat 500 times and examine the
+distribution of the MLEs.
+
+```{r}
+#| label: exA-4
+library(eha)
+set.seed(2024)
+simulate_weibull <- function(n = 200, lambda = 1, p = 2,
+                             cens_prob = 0.3) {
+  t      <- rweibull(n, shape = p, scale = lambda)
+  c_time <- runif(n, min = 0,
+                  max = quantile(t, 1 - cens_prob))
+  time   <- pmin(t, c_time)
+  event  <- as.integer(t <= c_time)
+  data.frame(time, event)
+}
+df  <- simulate_weibull()
+fit <- phreg(Surv(time, event) ~ 1, dist = "weibull", data = df)
+summary(fit)
+```
+
+**A.5 (T)** Explain the *identification problem* in the Cox model: why can
+the baseline hazard $h_0(t)$ and the coefficient vector $\beta$ not be
+estimated separately without additional assumptions in the nonparametric Cox
+model?
+
+---
+
+*References*
+
+- Broström, G. (2022). *Event History Analysis with R*, 2nd edition.
+  Chapman & Hall/CRC.
+- R packages: **eha**, **survival**, **cmprsk**, **MatchIt**.
+- Package documentation: `?oldmort`, `?infants`, `?swedeaths` in R.
